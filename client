@@ -1,0 +1,45 @@
+#! /usr/bin/env python3
+# -*- Python -*-
+
+import sys
+if sys.version_info.major != 3: raise RuntimeError("Run script with python3")
+
+import socket, time
+import asyncio
+
+# ----------------------------------------------------------------------
+
+async def run(ind):
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
+    loop = asyncio.get_event_loop()
+    await loop.sock_connect(sock, ("localhost", 1971))
+    clients_connected.add(ind)
+    print("connected", len(clients_connected), "of", len(clients))
+    await loop.sock_sendall(sock, "request {}".format(ind).encode("utf-8"))
+    # print(ind, "sent, receiving")
+    data = await loop.sock_recv(sock, 1024)
+    clients_done.add(ind)
+    print("done", len(clients_done), "of", len(clients), "still there", clients - clients_done)
+    # print(ind, done)
+    # print(ind, "received:", repr(data))
+    # data = await loop.sock_recv(sock, 1024)
+    # print(ind, "received:", repr(data))
+    # await loop.sock_sendall(sock, b"bye")
+
+async def submit_all():
+    runs = [run(i) for i in sorted(clients)]
+    await asyncio.gather(*runs)
+    # for r in asyncio.as_completed(runs):
+    #     await r
+    #     print(r.ind, 'done')
+
+clients = set(range(10, 99))
+clients_connected = set()
+clients_done = set()
+asyncio.get_event_loop().run_until_complete(submit_all())
+
+# ======================================================================
+### Local Variables:
+### eval: (if (fboundp 'eu-rename-buffer) (eu-rename-buffer))
+### End:

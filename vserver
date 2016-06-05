@@ -1,0 +1,74 @@
+#! /usr/bin/env python3
+# -*- Python -*-
+
+import sys
+if sys.version_info.major != 3: raise RuntimeError("Run script with python3")
+
+import os, logging, time, random, re
+import multiprocessing, socket
+
+# ----------------------------------------------------------------------
+
+logging.basicConfig(level=logging.DEBUG, format="{asctime} {levelname} PROC-{process}({name}) {message}", style="{")
+log = logging.getLogger("process")
+
+NUM_WORKERS = 3
+HOST_PORT = ("localhost", 1971)
+
+# ----------------------------------------------------------------------
+
+def worker(sock, task_id):
+    try:
+        client_no = -1
+        for i in range(100):
+            # log.info("loop %d", i)
+            data = sock.recv(1024)
+            m = re.match(r"request\s+(\d+)", data.decode("utf-8"))
+            if m:
+                client_no = int(m.group(1))
+                to_sleep = random.randint(1, 5)
+                log.info("%r %r connected sleep %r", task_id, client_no, to_sleep)
+                time.sleep(to_sleep)
+                sock.sendall(b"bye")
+            else:
+                break
+            # sock.sendall(b"reply0")
+            # time.sleep(random.randint(1, 10))
+            # sock.sendall(b"reply1")
+            # log.info("reply1")
+            # time.sleep(random.randint(1, 10))
+            # sock.sendall(b"reply2")
+            # log.info("reply2")
+    except Exception as err:
+        log.warning("%r %s", client_no, err)
+    sock.close()
+    log.info("%r %r done", task_id, client_no)
+    return task_id
+
+# ----------------------------------------------------------------------
+
+def server():
+
+    processing = {}                          # task id to socket used by the corresponding worker
+
+    def apply_completed_or_failed(result):
+        processing[result][1].close()
+        del processing[result]
+        log.info("task: %r still there: %r %r", result, len(processing), sorted(processing))
+
+    task_id = 1
+    with multiprocessing.Pool(NUM_WORKERS) as pool:
+        serversocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        serversocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        serversocket.bind(HOST_PORT)
+        serversocket.listen() #NUM_WORKERS+1)
+        while True:
+            connection, address = serversocket.accept()
+            processing[task_id] = [pool.apply_async(worker, (connection, task_id), {}, apply_completed_or_failed, apply_completed_or_failed), connection]
+            log.info("still processing: %d", len(processing))
+            task_id += 1
+            time.sleep(0.03)              # delay is needed, otherwise some connections could be lost
+
+# ----------------------------------------------------------------------
+
+server()
